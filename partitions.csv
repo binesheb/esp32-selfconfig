@@ -1,0 +1,7 @@
+# ESP32 SelfConfig OTA partition table for 4 MB flash
+# Name,     Type, SubType, Offset,   Size, Flags
+nvs,        data, nvs,     0x9000,   24K,
+otadata,    data, ota,     0xF000,   8K,
+phy_init,   data, phy,     0x11000,  4K,
+app0,       app,  ota_0,   0x20000,  1984K,
+app1,       app,  ota_1,             1984K,
