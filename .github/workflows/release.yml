@@ -31,9 +31,8 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           cp .pio/build/esp32dev/firmware.bin firmware.bin
-          SHA=$(sha256sum firmware.bin | awk '{print $1}')
-          SIZE=$(stat -c%s firmware.bin)
-          VERSION=${TAG_NAME#v}
+          export SHA=$(sha256sum firmware.bin | awk '{print $1}')
+          export SIZE=$(stat -c%s firmware.bin)
           python - <<'PY'
           import json, os
           tag = os.environ['TAG_NAME']
