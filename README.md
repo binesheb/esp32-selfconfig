@@ -12,13 +12,13 @@ This repository is intentionally structured so the **first firmware upload can b
 2. Open the cloned folder.
 3. Install **ESP32 by Espressif Systems** in Arduino IDE Boards Manager.
 4. Install **ArduinoJson 7.4.2** from Arduino IDE Library Manager.
-5. Open `main.ino` from the cloned folder.
+5. Open `main/main.ino` from the cloned folder.
 6. Select your ESP32 board. For a normal ESP32 Dev Module, use `ESP32 Dev Module`.
 7. Select the correct COM port.
 8. Compile first.
 9. Upload over USB.
 
-The repository contains `partitions.csv`. Arduino's build system uses a `partitions.csv` placed with the sketch, so the first USB upload is prepared with the OTA-capable partition layout. ESP32 OTA requires OTA application slots and an OTA data partition. citeturn0search0
+The repository contains `partitions.csv`. Arduino's build system uses a `partitions.csv` placed with the sketch, so the first USB upload is prepared with the OTA-capable partition layout. ESP32 OTA requires OTA application slots and an OTA data partition.
 
 > **Important:** Do not delete `partitions.csv`. Future OTA firmware must use the same compatible partition layout.
 
@@ -144,13 +144,14 @@ esp32-selfconfig/
 │       └── release.yml
 ├── AppHooks.h
 ├── libraries.txt
-├── main.ino
+├── main/
+│   └── main.ino
 ├── partitions.csv
 ├── platformio.ini
 └── README.md
 ```
 
-`main.ino` is the Arduino IDE entry point. `platformio.ini` is provided for PlatformIO/GitHub Actions builds.
+`main/main.ino` is the Arduino IDE firmware entry point. `platformio.ini` uses `main/` as its PlatformIO source directory and adds the repository root to the include path so the shared `AppHooks.h` remains available.
 
 ## PlatformIO
 
@@ -160,7 +161,7 @@ pio run --target upload
 pio device monitor
 ```
 
-PlatformIO is configured to use the repository root as the source directory so it builds the same `main.ino` used by Arduino IDE.
+PlatformIO builds `main/main.ino`, the same firmware source used by the Arduino IDE.
 
 ## OTA security
 
