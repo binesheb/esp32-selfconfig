@@ -55,7 +55,7 @@ String deviceId() {
   return String(id);
 }
 
-String setupSsid() {
+String configurationApSsid() {
   return String("ESP32-SETUP-") + String((uint32_t)(ESP.getEfuseMac() & 0xFFFF), HEX);
 }
 
@@ -102,280 +102,207 @@ String htmlEscape(const String &value) {
   s.replace("<", "&lt;");
   s.replace(">", "&gt;");
   s.replace("\"", "&quot;");
+  s.replace("'", "&#39;");
   return s;
-}
-
-String pageHtml() {
-  String html = R"HTML(<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ESP32 SelfConfig</title>
-<style>body{font-family:system-ui,sans-serif;background:#f4f6f8;margin:0;padding:18px;color:#17202a}.card{max-width:650px;margin:auto;background:white;padding:24px;border-radius:16px;box-shadow:0 4px 20px #0001}h1{margin-top:0}label{display:block;font-weight:600;margin-top:16px}input,select{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #ccd3da;border-radius:9px;font-size:16px}button{width:100%;padding:13px;margin-top:22px;border:0;border-radius:9px;font-size:16px;font-weight:700;cursor:pointer}.primary{background:#17202a;color:white}.danger{background:#eee;color:#a00}.muted{color:#65727e;font-size:14px}.status{padding:10px;border-radius:9px;background:#f0f3f5;margin:14px 0}</style></head><body><div class="card">
-<h1>ESP32 SelfConfig</h1><div class="muted">Self-provisioning and GitHub OTA framework</div><div class="status">Device: <b>)HTML";
-  html += htmlEscape(config.deviceName);
-  html += R"HTML(</b><br>Firmware: <b>)HTML";
-  html += APP_VERSION;
-  html += R"HTML(</b></div>
-<form method="POST" action="/save">
-<label>Device Name</label><input name="device" maxlength="48" value=")HTML";
-  html += htmlEscape(config.deviceName);
-  html += R"HTML(">
-<label>Wi-Fi Network</label><select id="ssid" name="ssid"><option value="">Select network...</option></select>
-<label>Wi-Fi Password</label><input type="password" name="pass" value=")HTML";
-  html += htmlEscape(config.wifiPassword);
-  html += R"HTML(">
-<label>GitHub Owner</label><input name="owner" placeholder="binesheb" value=")HTML";
-  html += htmlEscape(config.githubOwner);
-  html += R"HTML(">
-<label>GitHub Repository</label><input name="repo" placeholder="my-esp32-firmware" value=")HTML";
-  html += htmlEscape(config.githubRepo);
-  html += R"HTML(">
-<label>Firmware Channel</label><select name="channel"><option value="stable" )HTML";
-  html += config.channel == "stable" ? "selected" : "";
-  html += R"HTML(>Stable</option><option value="beta" )HTML";
-  html += config.channel == "beta" ? "selected" : "";
-  html += R"HTML(>Beta / Pre-release</option></select>
-<label><input style="width:auto" type="checkbox" name="autoupdate" )HTML";
-  html += config.autoUpdate ? "checked" : "";
-  html += R"HTML(> Automatically check for updates after boot</label>
-<button class="primary" type="submit">Save &amp; Reboot</button></form>
-<button class="danger" onclick="if(confirm('Erase all saved configuration?'))location.href='/factory-reset'">Factory Reset</button>
-<script>
-async function scan(){try{let r=await fetch('/api/scan');let a=await r.json();let s=document.getElementById('ssid');s.innerHTML='<option value="">Select network...</option>';a.forEach(x=>{let o=document.createElement('option');o.value=x.ssid;o.textContent=x.ssid+' ('+x.rssi+' dBm)';if(x.ssid===decodeURIComponent(')HTML";
-  html += WiFi.SSID();
-  html += R"HTML('))o.selected=true;s.appendChild(o)})}catch(e){console.log(e)}}scan();
-</script></div></body></html>)HTML";
-  return html;
-}
-
-void handleRoot() { server.send(200, "text/html", pageHtml()); }
-
-void handleScan() {
-  int n = WiFi.scanNetworks(false, true);
-  JsonDocument doc;
-  JsonArray arr = doc.to<JsonArray>();
-  for (int i = 0; i < n; i++) {
-    JsonObject o = arr.add<JsonObject>();
-    o["ssid"] = WiFi.SSID(i);
-    o["rssi"] = WiFi.RSSI(i);
-  }
-  String output;
-  serializeJson(doc, output);
-  WiFi.scanDelete();
-  server.send(200, "application/json", output);
-}
-
-void handleSave() {
-  if (server.hasArg("device")) config.deviceName = server.arg("device");
-  if (server.hasArg("ssid")) config.wifiSsid = server.arg("ssid");
-  if (server.hasArg("pass")) config.wifiPassword = server.arg("pass");
-  if (server.hasArg("owner")) config.githubOwner = server.arg("owner");
-  if (server.hasArg("repo")) config.githubRepo = server.arg("repo");
-  if (server.hasArg("channel")) config.channel = server.arg("channel");
-  config.autoUpdate = server.hasArg("autoupdate");
-  saveConfig();
-  server.send(200, "text/html", "<html><body><h2>Saved.</h2><p>Rebooting...</p></body></html>");
-  delay(1200);
-  ESP.restart();
-}
-
-void handleFactoryReset() {
-  server.send(200, "text/html", "<html><body><h2>Factory reset</h2><p>Rebooting...</p></body></html>");
-  delay(700);
-  factoryReset();
-}
-
-void handleNotFound() {
-  if (setupMode) {
-    server.sendHeader("Location", "http://192.168.4.1/", true);
-    server.send(302, "text/plain", "Redirecting");
-  } else server.send(404, "text/plain", "Not found");
 }
 
 void startSetupPortal() {
   setupMode = true;
-  WiFi.disconnect(true, true);
-  delay(200);
   WiFi.mode(WIFI_AP);
-  String ssid = setupSsid();
-  WiFi.softAP(ssid.c_str());
+  WiFi.softAP(configurationApSsid().c_str());
   dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/api/scan", HTTP_GET, handleScan);
-  server.on("/save", HTTP_POST, handleSave);
-  server.on("/factory-reset", HTTP_GET, handleFactoryReset);
-  server.onNotFound(handleNotFound);
+
+  server.on("/", HTTP_GET, []() {
+    String page = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>ESP32 Setup</title></head><body>";
+    page += "<h1>ESP32 SelfConfig</h1><form method='post' action='/save'>";
+    page += "Device name <input name='device' value='" + htmlEscape(config.deviceName) + "'><br>";
+    page += "Wi-Fi SSID <input name='ssid' value='" + htmlEscape(config.wifiSsid) + "'><br>";
+    page += "Wi-Fi password <input type='password' name='pass'><br>";
+    page += "GitHub owner <input name='owner' value='" + htmlEscape(config.githubOwner) + "'><br>";
+    page += "GitHub repository <input name='repo' value='" + htmlEscape(config.githubRepo) + "'><br>";
+    page += "Channel <select name='channel'><option value='stable'" + String(config.channel == "stable" ? " selected" : "") + ">Stable</option><option value='beta'" + String(config.channel == "beta" ? " selected" : "") + ">Beta</option></select><br>";
+    page += "Auto update <input type='checkbox' name='autoupdate' value='1'" + String(config.autoUpdate ? " checked" : "") + "><br>";
+    page += "<button type='submit'>Save & Reboot</button></form></body></html>";
+    server.send(200, "text/html", page);
+  });
+
+  server.on("/save", HTTP_POST, []() {
+    config.deviceName = server.arg("device");
+    config.wifiSsid = server.arg("ssid");
+    if (server.arg("pass").length() > 0) config.wifiPassword = server.arg("pass");
+    config.githubOwner = server.arg("owner");
+    config.githubRepo = server.arg("repo");
+    config.channel = server.arg("channel") == "beta" ? "beta" : "stable";
+    config.autoUpdate = server.hasArg("autoupdate");
+    saveConfig();
+    server.send(200, "text/html", "<h1>Saved</h1><p>Rebooting…</p>");
+    delay(500);
+    ESP.restart();
+  });
+
+  server.onNotFound([]() { server.sendHeader("Location", "/"); server.send(302, "text/plain", ""); });
   server.begin();
-  Serial.println("[SETUP] Configuration portal started");
-  Serial.print("[SETUP] SSID: "); Serial.println(ssid);
-  Serial.print("[SETUP] IP:   "); Serial.println(WiFi.softAPIP());
 }
 
-bool connectWiFi() {
-  if (config.wifiSsid.isEmpty()) return false;
-  Serial.printf("[WIFI] Connecting to %s", config.wifiSsid.c_str());
+bool connectWifi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(config.wifiSsid.c_str(), config.wifiPassword.c_str());
-  unsigned long started = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - started < WIFI_TIMEOUT_MS) { delay(250); Serial.print("."); }
-  Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("[WIFI] Connected. IP: "); Serial.println(WiFi.localIP());
-    return true;
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT_MS) {
+    delay(250);
   }
-  Serial.println("[WIFI] Connection failed");
-  return false;
+  return WiFi.status() == WL_CONNECTED;
 }
 
-int compareVersions(String a, String b) {
-  a.replace("v", ""); b.replace("v", "");
-  int a1=0,a2=0,a3=0,b1=0,b2=0,b3=0;
-  sscanf(a.c_str(), "%d.%d.%d", &a1,&a2,&a3);
-  sscanf(b.c_str(), "%d.%d.%d", &b1,&b2,&b3);
-  if (a1 != b1) return a1 > b1 ? 1 : -1;
-  if (a2 != b2) return a2 > b2 ? 1 : -1;
-  if (a3 != b3) return a3 > b3 ? 1 : -1;
-  return 0;
+String releaseApiUrl() {
+  if (config.channel == "beta") {
+    return "https://api.github.com/repos/" + config.githubOwner + "/" + config.githubRepo + "/releases";
+  }
+  return "https://api.github.com/repos/" + config.githubOwner + "/" + config.githubRepo + "/releases/latest";
 }
 
-bool httpsGetString(const String &url, String &payload) {
+bool parseManifest(const String &manifestUrl, String &version, String &firmwareUrl, String &sha256, size_t &size) {
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  if (!http.begin(client, url)) return false;
-  http.addHeader("Accept", "application/vnd.github+json");
-  http.addHeader("X-GitHub-Api-Version", "2026-03-10");
+  if (!http.begin(client, manifestUrl)) return false;
+  http.addHeader("User-Agent", "ESP32-SelfConfig");
   int code = http.GET();
-  if (code == HTTP_CODE_OK) payload = http.getString();
+  if (code != HTTP_CODE_OK) { http.end(); return false; }
+  DynamicJsonDocument doc(2048);
+  DeserializationError error = deserializeJson(doc, http.getString());
   http.end();
-  return code == HTTP_CODE_OK;
+  if (error) return false;
+  version = doc["version"].as<String>();
+  firmwareUrl = doc["firmware_url"].as<String>();
+  sha256 = doc["sha256"].as<String>();
+  size = doc["size"].as<size_t>();
+  return version.length() > 0 && firmwareUrl.length() > 0 && sha256.length() == 64 && size > 0;
 }
 
-bool findRelease(String &releaseJson) {
-  String base = "https://api.github.com/repos/" + config.githubOwner + "/" + config.githubRepo;
-  if (config.channel == "stable") return httpsGetString(base + "/releases/latest", releaseJson);
-  if (!httpsGetString(base + "/releases?per_page=20", releaseJson)) return false;
-  JsonDocument listDoc;
-  if (deserializeJson(listDoc, releaseJson)) return false;
-  JsonArray releases = listDoc.as<JsonArray>();
-  for (JsonObject r : releases) {
-    if (!r["draft"].as<bool>()) { releaseJson = ""; serializeJson(r, releaseJson); return true; }
+bool fetchLatestRelease(String &manifestUrl) {
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  if (!http.begin(client, releaseApiUrl())) return false;
+  http.addHeader("User-Agent", "ESP32-SelfConfig");
+  int code = http.GET();
+  if (code != HTTP_CODE_OK) { http.end(); return false; }
+  DynamicJsonDocument doc(8192);
+  DeserializationError error = deserializeJson(doc, http.getString());
+  http.end();
+  if (error) return false;
+  if (config.channel == "beta") {
+    for (JsonObject release : doc.as<JsonArray>()) {
+      if (release["prerelease"].as<bool>() && !release["draft"].as<bool>()) {
+        for (JsonObject asset : release["assets"].as<JsonArray>()) {
+          if (asset["name"].as<String>() == "manifest.json") { manifestUrl = asset["browser_download_url"].as<String>(); return true; }
+        }
+      }
+    }
+    return false;
+  }
+  for (JsonObject asset : doc["assets"].as<JsonArray>()) {
+    if (asset["name"].as<String>() == "manifest.json") { manifestUrl = asset["browser_download_url"].as<String>(); return true; }
   }
   return false;
 }
 
-bool downloadAndInstall(const String &firmwareUrl, size_t expectedSize, const String &expectedSha) {
+bool isNewerVersion(const String &candidate) {
+  int current[3] = {0, 1, 0};
+  int next[3] = {0, 0, 0};
+  sscanf(APP_VERSION, "%d.%d.%d", &current[0], &current[1], &current[2]);
+  sscanf(candidate.c_str(), "v%d.%d.%d", &next[0], &next[1], &next[2]);
+  for (int i = 0; i < 3; ++i) {
+    if (next[i] != current[i]) return next[i] > current[i];
+  }
+  return false;
+}
+
+bool updateFirmware(const String &url, const String &expectedSha256, size_t expectedSize) {
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  Serial.println("[OTA] Downloading firmware...");
-  if (!http.begin(client, firmwareUrl)) return false;
+  if (!http.begin(client, url)) return false;
+  http.addHeader("User-Agent", "ESP32-SelfConfig");
   int code = http.GET();
-  if (code != HTTP_CODE_OK) { Serial.printf("[OTA] Download HTTP error: %d\n", code); http.end(); return false; }
-  int total = http.getSize();
-  if (expectedSize > 0 && total > 0 && expectedSize != (size_t)total) { Serial.printf("[OTA] Size mismatch: manifest=%u download=%d\n", (unsigned)expectedSize, total); http.end(); return false; }
-  if (!Update.begin(total > 0 ? total : UPDATE_SIZE_UNKNOWN)) { Serial.printf("[OTA] Update.begin failed: %s\n", Update.errorString()); http.end(); return false; }
-
+  if (code != HTTP_CODE_OK) { http.end(); return false; }
+  if (http.getSize() > 0 && (size_t)http.getSize() != expectedSize) { http.end(); return false; }
+  if (!Update.begin(expectedSize, U_FLASH)) { http.end(); return false; }
+  WiFiClient *stream = http.getStreamPtr();
+  uint8_t buffer[1024];
+  size_t total = 0;
   mbedtls_sha256_context sha;
   mbedtls_sha256_init(&sha);
-  mbedtls_sha256_starts(&sha, 0);
-  WiFiClient *stream = http.getStreamPtr();
-  uint8_t buffer[2048];
-  size_t written = 0;
-  int lastPercent = -1;
-
-  while (http.connected() && (total < 0 || written < (size_t)total)) {
+  if (mbedtls_sha256_starts_ret(&sha, 0) != 0) { mbedtls_sha256_free(&sha); Update.abort(); http.end(); return false; }
+  while (http.connected() || stream->available()) {
     size_t available = stream->available();
     if (!available) { delay(1); continue; }
-    size_t toRead = available > sizeof(buffer) ? sizeof(buffer) : available;
-    int len = stream->readBytes(buffer, toRead);
-    if (len <= 0) break;
-    if (Update.write(buffer, len) != (size_t)len) { Serial.printf("[OTA] Write failed: %s\n", Update.errorString()); Update.abort(); mbedtls_sha256_free(&sha); http.end(); return false; }
-    mbedtls_sha256_update(&sha, buffer, len);
-    written += len;
-    if (total > 0) {
-      int percent = (int)((written * 100ULL) / total);
-      if (percent != lastPercent && percent % 5 == 0) { Serial.printf("[OTA] Progress: %d%%\n", percent); lastPercent = percent; }
+    size_t read = stream->readBytes(buffer, min(sizeof(buffer), available));
+    if (!read) continue;
+    if (mbedtls_sha256_update_ret(&sha, buffer, read) != 0 || Update.write(buffer, read) != read) {
+      mbedtls_sha256_free(&sha); Update.abort(); http.end(); return false;
     }
+    total += read;
   }
-
   uint8_t digest[32];
-  mbedtls_sha256_finish(&sha, digest);
+  if (mbedtls_sha256_finish_ret(&sha, digest) != 0) { mbedtls_sha256_free(&sha); Update.abort(); http.end(); return false; }
   mbedtls_sha256_free(&sha);
-  String actualSha;
-  char hex[3];
-  for (uint8_t b : digest) { snprintf(hex, sizeof(hex), "%02x", b); actualSha += hex; }
-  String expected = expectedSha;
-  expected.toLowerCase();
-  Serial.print("[OTA] SHA-256: "); Serial.println(actualSha);
-  if (expected.length() != 64 || actualSha != expected) { Serial.println("[OTA] SHA-256 verification FAILED"); Update.abort(); http.end(); return false; }
-  if (!Update.end(true)) { Serial.printf("[OTA] Update.end failed: %s\n", Update.errorString()); http.end(); return false; }
+  if (total != expectedSize) { Update.abort(); http.end(); return false; }
+  char actualSha256[65];
+  for (size_t i = 0; i < sizeof(digest); ++i) sprintf(actualSha256 + (i * 2), "%02x", digest[i]);
+  actualSha256[64] = '\0';
+  if (!expectedSha256.equalsIgnoreCase(actualSha256)) { Update.abort(); http.end(); return false; }
+  bool complete = Update.end();
   http.end();
-  Serial.println("[OTA] Firmware installed successfully");
-  return true;
+  return complete && Update.isFinished();
 }
 
-bool checkForUpdate() {
-  if (!isConfigured() || WiFi.status() != WL_CONNECTED) return false;
-  Serial.printf("[OTA] Checking %s/%s (%s)\n", config.githubOwner.c_str(), config.githubRepo.c_str(), config.channel.c_str());
-  String releaseJson;
-  if (!findRelease(releaseJson)) { Serial.println("[OTA] No usable GitHub release found"); return false; }
-  JsonDocument releaseDoc;
-  if (deserializeJson(releaseDoc, releaseJson)) { Serial.println("[OTA] Invalid release JSON"); return false; }
-  String tag = releaseDoc["tag_name"] | "";
-  String releaseChannel = releaseDoc["prerelease"].as<bool>() ? "beta" : "stable";
-  if (config.channel == "stable" && releaseChannel != "stable") return false;
-
-  JsonArray assets = releaseDoc["assets"].as<JsonArray>();
-  String manifestUrl;
-  for (JsonObject asset : assets) {
-    String name = asset["name"] | "";
-    if (name == "manifest.json") { manifestUrl = asset["browser_download_url"] | ""; break; }
+void checkForUpdate() {
+  if (!config.autoUpdate || WiFi.status() != WL_CONNECTED || !isConfigured()) return;
+  String manifestUrl, version, firmwareUrl, sha256;
+  size_t size = 0;
+  if (!fetchLatestRelease(manifestUrl)) return;
+  if (!parseManifest(manifestUrl, version, firmwareUrl, sha256, size)) return;
+  if (!isNewerVersion(version)) return;
+  Serial.printf("[OTA] Updating to %s\n", version.c_str());
+  if (updateFirmware(firmwareUrl, sha256, size)) {
+    Serial.println("[OTA] Update verified, rebooting");
+    delay(500);
+    ESP.restart();
   }
-  if (manifestUrl.isEmpty()) { Serial.println("[OTA] Release has no manifest.json asset"); return false; }
-  String manifestJson;
-  if (!httpsGetString(manifestUrl, manifestJson)) return false;
-  JsonDocument manifest;
-  if (deserializeJson(manifest, manifestJson)) return false;
-  String latest = manifest["version"] | tag;
-  String sha = manifest["sha256"] | "";
-  String firmwareUrl = manifest["firmware_url"] | "";
-  size_t firmwareSize = manifest["size"] | 0;
-  if (firmwareUrl.isEmpty()) firmwareUrl = "https://github.com/" + config.githubOwner + "/" + config.githubRepo + "/releases/download/" + tag + "/firmware.bin";
-  Serial.printf("[OTA] Current=%s Latest=%s\n", APP_VERSION, latest.c_str());
-  if (compareVersions(latest, APP_VERSION) <= 0) { Serial.println("[OTA] Firmware is up to date"); return false; }
-  if (sha.length() != 64) { Serial.println("[OTA] Invalid SHA-256 in manifest"); return false; }
-  if (downloadAndInstall(firmwareUrl, firmwareSize, sha)) { delay(1000); ESP.restart(); return true; }
-  return false;
+  Serial.println("[OTA] Update failed; continuing current firmware");
 }
 
-void checkSetupButton() {
+void handleSetupButton() {
   bool pressed = digitalRead(SETUP_BUTTON_PIN) == LOW;
-  if (!pressed) { setupButtonStart = 0; return; }
-  if (setupButtonStart == 0) setupButtonStart = millis();
-  unsigned long held = millis() - setupButtonStart;
-  if (held >= FACTORY_RESET_HOLD_MS) factoryReset();
-  else if (held >= SETUP_HOLD_MS && !setupMode) startSetupPortal();
+  if (pressed && setupButtonStart == 0) setupButtonStart = millis();
+  if (!pressed && setupButtonStart != 0) {
+    unsigned long held = millis() - setupButtonStart;
+    setupButtonStart = 0;
+    if (held >= FACTORY_RESET_HOLD_MS) factoryReset();
+    else if (held >= SETUP_HOLD_MS) startSetupPortal();
+  }
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(500);
   pinMode(SETUP_BUTTON_PIN, INPUT_PULLUP);
+  Serial.begin(115200);
   loadConfig();
-  Serial.println();
-  Serial.println("========================================");
-  Serial.println("ESP32 SelfConfig");
-  Serial.printf("Firmware: %s\n", APP_VERSION);
-  Serial.printf("Device:   %s\n", config.deviceName.c_str());
-  Serial.printf("ID:       %s\n", deviceId().c_str());
-  Serial.println("========================================");
-  if (!isConfigured() || !connectWiFi()) startSetupPortal();
-  else { if (config.autoUpdate) checkForUpdate(); applicationSetup(); }
+  if (!isConfigured() || !connectWifi()) {
+    startSetupPortal();
+    return;
+  }
+  checkForUpdate();
+  applicationSetup();
 }
 
 void loop() {
-  checkSetupButton();
-  if (setupMode) { dnsServer.processNextRequest(); server.handleClient(); }
-  else applicationLoop();
-  delay(2);
+  handleSetupButton();
+  if (setupMode) {
+    dnsServer.processNextRequest();
+    server.handleClient();
+  } else {
+    applicationLoop();
+  }
 }
