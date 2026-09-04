@@ -7,6 +7,7 @@ The project follows [Semantic Versioning](https://semver.org/). Firmware release
 ## [Unreleased]
 
 ### Changed
+- Pinned the ArduinoJson PlatformIO dependency to 7.4.2 so CI and local firmware builds use the documented dependency version consistently.
 - Documented the current `0.1.0` framework baseline so release history and the compiled `APP_VERSION` have an explicit source of record.
 
 ## [0.1.0]
