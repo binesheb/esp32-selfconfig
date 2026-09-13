@@ -161,7 +161,12 @@ String releaseApiUrl() {
   return "https://api.github.com/repos/" + config.githubOwner + "/" + config.githubRepo + "/releases/latest";
 }
 
+bool isHttpsUrl(const String &url) {
+  return url.startsWith("https://") && url.length() > 8;
+}
+
 bool parseManifest(const String &manifestUrl, String &version, String &firmwareUrl, String &sha256, size_t &size) {
+  if (!isHttpsUrl(manifestUrl)) return false;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
@@ -177,7 +182,7 @@ bool parseManifest(const String &manifestUrl, String &version, String &firmwareU
   firmwareUrl = doc["firmware_url"].as<String>();
   sha256 = doc["sha256"].as<String>();
   size = doc["size"].as<size_t>();
-  return version.length() > 0 && firmwareUrl.length() > 0 && sha256.length() == 64 && size > 0;
+  return version.length() > 0 && isHttpsUrl(firmwareUrl) && sha256.length() == 64 && size > 0;
 }
 
 bool fetchLatestRelease(String &manifestUrl) {
@@ -196,14 +201,24 @@ bool fetchLatestRelease(String &manifestUrl) {
     for (JsonObject release : doc.as<JsonArray>()) {
       if (release["prerelease"].as<bool>() && !release["draft"].as<bool>()) {
         for (JsonObject asset : release["assets"].as<JsonArray>()) {
-          if (asset["name"].as<String>() == "manifest.json") { manifestUrl = asset["browser_download_url"].as<String>(); return true; }
+          if (asset["name"].as<String>() == "manifest.json") {
+            String candidate = asset["browser_download_url"].as<String>();
+            if (!isHttpsUrl(candidate)) return false;
+            manifestUrl = candidate;
+            return true;
+          }
         }
       }
     }
     return false;
   }
   for (JsonObject asset : doc["assets"].as<JsonArray>()) {
-    if (asset["name"].as<String>() == "manifest.json") { manifestUrl = asset["browser_download_url"].as<String>(); return true; }
+    if (asset["name"].as<String>() == "manifest.json") {
+      String candidate = asset["browser_download_url"].as<String>();
+      if (!isHttpsUrl(candidate)) return false;
+      manifestUrl = candidate;
+      return true;
+    }
   }
   return false;
 }
@@ -220,6 +235,7 @@ bool isNewerVersion(const String &candidate) {
 }
 
 bool updateFirmware(const String &url, const String &expectedSha256, size_t expectedSize) {
+  if (!isHttpsUrl(url)) return false;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
