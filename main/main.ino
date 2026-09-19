@@ -165,6 +165,16 @@ bool isHttpsUrl(const String &url) {
   return url.startsWith("https://") && url.length() > 8;
 }
 
+bool isSha256Hex(const String &sha256) {
+  if (sha256.length() != 64) return false;
+  for (size_t i = 0; i < sha256.length(); ++i) {
+    char c = sha256[i];
+    bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    if (!hex) return false;
+  }
+  return true;
+}
+
 bool parseManifest(const String &manifestUrl, String &version, String &firmwareUrl, String &sha256, size_t &size) {
   if (!isHttpsUrl(manifestUrl)) return false;
   WiFiClientSecure client;
@@ -182,7 +192,7 @@ bool parseManifest(const String &manifestUrl, String &version, String &firmwareU
   firmwareUrl = doc["firmware_url"].as<String>();
   sha256 = doc["sha256"].as<String>();
   size = doc["size"].as<size_t>();
-  return version.length() > 0 && isHttpsUrl(firmwareUrl) && sha256.length() == 64 && size > 0;
+  return version.length() > 0 && isHttpsUrl(firmwareUrl) && isSha256Hex(sha256) && size > 0;
 }
 
 bool fetchLatestRelease(String &manifestUrl) {
@@ -235,7 +245,7 @@ bool isNewerVersion(const String &candidate) {
 }
 
 bool updateFirmware(const String &url, const String &expectedSha256, size_t expectedSize) {
-  if (!isHttpsUrl(url)) return false;
+  if (!isHttpsUrl(url) || !isSha256Hex(expectedSha256)) return false;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
