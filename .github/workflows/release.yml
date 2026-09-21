@@ -74,6 +74,39 @@ jobs:
           PY
         shell: bash
 
+      - name: Validate generated release manifest
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          tag = os.environ['TAG_NAME']
+          expected_version = tag[1:] if tag.startswith('v') else tag
+          expected_channel = 'beta' if '-' in expected_version else 'stable'
+          firmware = Path('firmware.bin')
+          manifest = json.loads(Path('manifest.json').read_text())
+
+          actual_sha = hashlib.sha256(firmware.read_bytes()).hexdigest()
+          actual_size = firmware.stat().st_size
+          expected_url = f"https://github.com/{os.environ['REPOSITORY']}/releases/download/{tag}/firmware.bin"
+
+          assert manifest['version'] == expected_version, (manifest['version'], expected_version)
+          assert manifest['channel'] == expected_channel, (manifest['channel'], expected_channel)
+          assert manifest['firmware'] == 'firmware.bin'
+          assert manifest['firmware_url'] == expected_url, (manifest['firmware_url'], expected_url)
+          assert manifest['sha256'].lower() == actual_sha, (manifest['sha256'], actual_sha)
+          assert manifest['size'] == actual_size, (manifest['size'], actual_size)
+          assert len(manifest['sha256']) == 64
+          int(manifest['sha256'], 16)
+          assert actual_size > 0
+          print('Release manifest validated:', expected_version, actual_size, actual_sha)
+          PY
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
