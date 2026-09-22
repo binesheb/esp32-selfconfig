@@ -237,7 +237,11 @@ bool isNewerVersion(const String &candidate) {
   int current[3] = {0, 1, 0};
   int next[3] = {0, 0, 0};
   sscanf(APP_VERSION, "%d.%d.%d", &current[0], &current[1], &current[2]);
-  sscanf(candidate.c_str(), "v%d.%d.%d", &next[0], &next[1], &next[2]);
+
+  String normalized = candidate;
+  if (normalized.startsWith("v") || normalized.startsWith("V")) normalized.remove(0, 1);
+  if (sscanf(normalized.c_str(), "%d.%d.%d", &next[0], &next[1], &next[2]) != 3) return false;
+
   for (int i = 0; i < 3; ++i) {
     if (next[i] != current[i]) return next[i] > current[i];
   }
@@ -258,77 +262,3 @@ bool updateFirmware(const String &url, const String &expectedSha256, size_t expe
   WiFiClient *stream = http.getStreamPtr();
   uint8_t buffer[1024];
   size_t total = 0;
-  mbedtls_sha256_context sha;
-  mbedtls_sha256_init(&sha);
-  if (mbedtls_sha256_starts_ret(&sha, 0) != 0) { mbedtls_sha256_free(&sha); Update.abort(); http.end(); return false; }
-  while (http.connected() || stream->available()) {
-    size_t available = stream->available();
-    if (!available) { delay(1); continue; }
-    size_t read = stream->readBytes(buffer, min(sizeof(buffer), available));
-    if (!read) continue;
-    if (mbedtls_sha256_update_ret(&sha, buffer, read) != 0 || Update.write(buffer, read) != read) {
-      mbedtls_sha256_free(&sha); Update.abort(); http.end(); return false;
-    }
-    total += read;
-  }
-  uint8_t digest[32];
-  if (mbedtls_sha256_finish_ret(&sha, digest) != 0) { mbedtls_sha256_free(&sha); Update.abort(); http.end(); return false; }
-  mbedtls_sha256_free(&sha);
-  if (total != expectedSize) { Update.abort(); http.end(); return false; }
-  char actualSha256[65];
-  for (size_t i = 0; i < sizeof(digest); ++i) sprintf(actualSha256 + (i * 2), "%02x", digest[i]);
-  actualSha256[64] = '\0';
-  if (!expectedSha256.equalsIgnoreCase(actualSha256)) { Update.abort(); http.end(); return false; }
-  bool complete = Update.end();
-  http.end();
-  return complete && Update.isFinished();
-}
-
-void checkForUpdate() {
-  if (!config.autoUpdate || WiFi.status() != WL_CONNECTED || !isConfigured()) return;
-  String manifestUrl, version, firmwareUrl, sha256;
-  size_t size = 0;
-  if (!fetchLatestRelease(manifestUrl)) return;
-  if (!parseManifest(manifestUrl, version, firmwareUrl, sha256, size)) return;
-  if (!isNewerVersion(version)) return;
-  Serial.printf("[OTA] Updating to %s\n", version.c_str());
-  if (updateFirmware(firmwareUrl, sha256, size)) {
-    Serial.println("[OTA] Update verified, rebooting");
-    delay(500);
-    ESP.restart();
-  }
-  Serial.println("[OTA] Update failed; continuing current firmware");
-}
-
-void handleSetupButton() {
-  bool pressed = digitalRead(SETUP_BUTTON_PIN) == LOW;
-  if (pressed && setupButtonStart == 0) setupButtonStart = millis();
-  if (!pressed && setupButtonStart != 0) {
-    unsigned long held = millis() - setupButtonStart;
-    setupButtonStart = 0;
-    if (held >= FACTORY_RESET_HOLD_MS) factoryReset();
-    else if (held >= SETUP_HOLD_MS) startSetupPortal();
-  }
-}
-
-void setup() {
-  pinMode(SETUP_BUTTON_PIN, INPUT_PULLUP);
-  Serial.begin(115200);
-  loadConfig();
-  if (!isConfigured() || !connectWifi()) {
-    startSetupPortal();
-    return;
-  }
-  checkForUpdate();
-  applicationSetup();
-}
-
-void loop() {
-  handleSetupButton();
-  if (setupMode) {
-    dnsServer.processNextRequest();
-    server.handleClient();
-  } else {
-    applicationLoop();
-  }
-}
