@@ -8,6 +8,14 @@
 #include <Update.h>
 #include <ArduinoJson.h>
 #include <mbedtls/sha256.h>
+#include <mbedtls/version.h>
+
+// Mbed TLS 3.x removed the legacy `_ret` suffix while retaining int return codes.
+#if MBEDTLS_VERSION_NUMBER >= 0x03000000
+#define mbedtls_sha256_starts_ret mbedtls_sha256_starts
+#define mbedtls_sha256_update_ret mbedtls_sha256_update
+#define mbedtls_sha256_finish_ret mbedtls_sha256_finish
+#endif
 #include <esp_system.h>
 #include <esp_ota_ops.h>
 
